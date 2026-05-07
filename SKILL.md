@@ -33,7 +33,7 @@ Never ask for passwords, tokens, cookies, or session exports. Never attempt to s
    - Visit each target URL or the resolved publisher landing page.
    - Prefer publisher-provided PDF/full-text buttons over constructing undocumented URLs.
    - Use page cookies/session state from the visible browser when fetching PDF links.
-   - For ScienceDirect PDF-viewer or signed asset pages that reject background requests, use the authorized browser page itself to fetch `window.location.href`; save only if the returned bytes start with `%PDF`.
+   - For ScienceDirect PDF-viewer or signed asset pages that reject background requests, first use CDP `Fetch` response-stage capture for the `pdf.sciencedirectassets.com` response, then fall back to an authorized browser-page `fetch(window.location.href)`; save only if the returned bytes start with `%PDF`.
    - Save only files that return PDF content or trigger a browser download.
    - Record successes, skipped pages, access-denied pages, provider errors, and manual-search-needed cases in a manifest.
 

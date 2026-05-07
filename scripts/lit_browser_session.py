@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
 import re
 import sys
@@ -190,18 +191,63 @@ def try_request_download(context, candidate_url: str, output_path: Path) -> tupl
 
 
 def try_browser_pdf_fetch(context, candidate_url: str, output_path: Path) -> tuple[bool, str]:
-    """Open a PDF viewer URL and fetch from inside that browser page.
+    """Open a PDF viewer URL and capture/fetch from inside that browser page.
 
     ScienceDirect may return 403 to background API requests while the same
-    authorized Chrome page can load and fetch the signed PDF asset.
+    authorized Chrome page can load the signed PDF asset. Prefer CDP Fetch
+    response capture so Chrome's PDF viewer wrapper cannot hide the raw PDF.
     """
     pdf_page = context.new_page()
+    session = None
+    captured: dict[str, object] = {}
     try:
+        if "sciencedirect.com" in candidate_url or "sciencedirectassets.com" in candidate_url:
+            session = context.new_cdp_session(pdf_page)
+
+            def handle_paused(event: dict) -> None:
+                request_id = event.get("requestId")
+                request = event.get("request") or {}
+                url = request.get("url", "")
+                try:
+                    if event.get("responseStatusCode") and (
+                        "pdf.sciencedirectassets.com" in url
+                        or "/science/article/pii/" in url and "/pdfft" in url
+                    ):
+                        body = session.send("Fetch.getResponseBody", {"requestId": request_id})
+                        raw = body.get("body", "")
+                        data = base64.b64decode(raw) if body.get("base64Encoded") else raw.encode()
+                        if b"%PDF" in data[:2048]:
+                            captured["data"] = data
+                            captured["url"] = url
+                    session.send("Fetch.continueRequest", {"requestId": request_id})
+                except Exception as exc:
+                    captured.setdefault("error", str(exc))
+                    try:
+                        session.send("Fetch.continueRequest", {"requestId": request_id})
+                    except Exception:
+                        pass
+
+            session.on("Fetch.requestPaused", handle_paused)
+            session.send(
+                "Fetch.enable",
+                {
+                    "patterns": [
+                        {"urlPattern": "*pdf.sciencedirectassets.com*", "requestStage": "Response"},
+                        {"urlPattern": "*sciencedirect.com/science/article/pii*/pdfft*", "requestStage": "Response"},
+                    ]
+                },
+            )
+
         pdf_page.goto(candidate_url, wait_until="domcontentloaded", timeout=60000)
         try:
             pdf_page.wait_for_load_state("networkidle", timeout=15000)
         except Exception:
             pass
+        pdf_page.wait_for_timeout(2500)
+        if captured.get("data"):
+            output_path.write_bytes(captured["data"])
+            return True, "saved PDF via CDP Fetch response capture"
+
         result = pdf_page.evaluate(
             """async () => {
                 const response = await fetch(window.location.href, {credentials: "include", cache: "no-store"});
@@ -224,6 +270,11 @@ def try_browser_pdf_fetch(context, candidate_url: str, output_path: Path) -> tup
     except Exception as exc:
         return False, f"browser fetch failed: {exc}"
     finally:
+        try:
+            if session:
+                session.send("Fetch.disable")
+        except Exception:
+            pass
         try:
             pdf_page.close()
         except Exception:
