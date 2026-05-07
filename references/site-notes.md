@@ -34,6 +34,12 @@ Use these notes to recognize ordinary access paths and failure modes. Do not use
 - Let the browser follow redirects, then look for the publisher's visible PDF/full-text controls.
 - Filename from DOI should replace `/`, `:`, and whitespace with safe characters.
 
+## Internet Archive
+
+- Public archive.org item pages may expose derivative "Text PDF" files through `https://archive.org/metadata/<identifier>`.
+- Treat those files as public-source candidates only when the item page or metadata is openly reachable, and still save only responses whose bytes verify as PDF content.
+- Do not use this route for controlled digital lending flows, login-only loans, or pages that require user account actions.
+
 ## Common Stop Conditions
 
 Stop automation and ask the user to take over when:

@@ -29,7 +29,7 @@ Never ask for passwords, tokens, cookies, or session exports. Never attempt to s
    - Wait for the user to confirm before continuing. Do not collect credentials in chat.
 
 4. Automate authorized retrieval:
-   - Run a legal resolver pass before browser work when DOI/PMID/arXiv IDs are available: arXiv/PMC/native public PDFs, Unpaywall/OpenAlex/Crossref metadata, then publisher/institutional pages.
+   - Run a legal resolver pass before browser work when DOI/PMID/arXiv IDs are available: arXiv/PMC/native public PDFs, public Internet Archive item metadata, Unpaywall/OpenAlex/Crossref metadata, then publisher/institutional pages.
    - Visit each target URL or the resolved publisher landing page.
    - Prefer publisher-provided PDF/full-text buttons over constructing undocumented URLs.
    - Use page cookies/session state from the visible browser when fetching PDF links.

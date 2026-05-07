@@ -9,8 +9,9 @@ import json
 import re
 import sys
 import time
+import urllib.request
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 
 PDF_LINK_HINTS = (
@@ -153,6 +154,56 @@ def science_direct_pdf_candidates(value: str) -> list[str]:
 def arxiv_pdf_candidate(value: str) -> str:
     m = re.search(r"arxiv\.org/(?:abs|pdf)/(\d{4}\.\d{4,5})(?:v\d+)?", value or "", flags=re.I)
     return f"https://arxiv.org/pdf/{m.group(1)}.pdf" if m else ""
+
+
+def internet_archive_identifier(value: str) -> str:
+    parsed = urlparse(value or "")
+    if not parsed.netloc.lower().endswith("archive.org"):
+        return ""
+    parts = [unquote(part) for part in parsed.path.split("/") if part]
+    for marker in ("details", "download"):
+        if marker in parts:
+            index = parts.index(marker)
+            if index + 1 < len(parts):
+                return parts[index + 1]
+    return ""
+
+
+def internet_archive_pdf_candidates(value: str) -> list[str]:
+    identifier = internet_archive_identifier(value)
+    if not identifier:
+        return []
+    encoded_id = quote(identifier, safe="")
+    metadata_url = f"https://archive.org/metadata/{encoded_id}"
+    candidates: list[str] = []
+    try:
+        req = urllib.request.Request(metadata_url, headers={"User-Agent": "CodexInstitutionalDownload/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode("utf-8", errors="replace"))
+        for item in data.get("files") or []:
+            name = str(item.get("name") or "")
+            fmt = str(item.get("format") or "").lower()
+            if name.lower().endswith(".pdf") and ("pdf" in fmt or not fmt):
+                candidates.append(f"https://archive.org/download/{encoded_id}/{quote(name, safe='')}")
+    except Exception:
+        pass
+    candidates.append(f"https://archive.org/download/{encoded_id}/{encoded_id}.pdf")
+    seen: set[str] = set()
+    return [url for url in candidates if not (url in seen or seen.add(url))]
+
+
+def try_public_pdf_download(candidate_url: str, output_path: Path) -> tuple[bool, str]:
+    try:
+        req = urllib.request.Request(candidate_url, headers={"User-Agent": "CodexInstitutionalDownload/1.0"})
+        with urllib.request.urlopen(req, timeout=120) as response:
+            content_type = (response.headers.get("content-type") or "").lower()
+            body = response.read()
+        if b"%PDF" not in body[:2048] and "pdf" not in content_type:
+            return False, "public candidate did not return PDF content"
+        output_path.write_bytes(body)
+        return True, "saved public PDF response"
+    except Exception as exc:
+        return False, f"public request failed: {exc}"
 
 
 def save_response_pdf(response, output_path: Path) -> bool:
@@ -314,6 +365,13 @@ def process_url(page, context, url: str, index: int, download_dir: Path) -> dict
                 record.update(status="downloaded", file=str(output_path), note=note, final_url=public_pdf)
                 return record
 
+        for public_pdf in internet_archive_pdf_candidates(url):
+            output_path = unique_path(download_dir / filename_for(url, index))
+            ok, note = try_public_pdf_download(public_pdf, output_path)
+            if ok:
+                record.update(status="downloaded", file=str(output_path), note=f"{note}; Internet Archive metadata", final_url=public_pdf)
+                return record
+
         response = page.goto(url, wait_until="domcontentloaded", timeout=45000)
         page.wait_for_timeout(1500)
         article_url = science_direct_article_url(page.url)
@@ -344,6 +402,12 @@ def process_url(page, context, url: str, index: int, download_dir: Path) -> dict
             pass
 
         output_path = unique_path(download_dir / filename_for(url, index, title))
+        for public_pdf in internet_archive_pdf_candidates(page.url):
+            ok, note = try_public_pdf_download(public_pdf, output_path)
+            if ok:
+                record.update(status="downloaded", file=str(output_path), note=f"{note}; Internet Archive metadata", final_url=public_pdf)
+                return record
+
         candidates = collect_pdf_candidates(page)
         for candidate in candidates:
             ok, note = try_request_download(context, candidate["href"], output_path)
