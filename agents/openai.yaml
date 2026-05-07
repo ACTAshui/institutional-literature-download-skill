@@ -1,0 +1,4 @@
+interface:
+  display_name: "Institutional Literature Download"
+  short_description: "Download authorized papers via institutional browser sessions."
+  default_prompt: "Use $institutional-literature-download to download the papers I can access through my institution."
