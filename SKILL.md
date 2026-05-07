@@ -21,6 +21,7 @@ Never ask for passwords, tokens, cookies, or session exports. Never attempt to s
 2. Start a visible persistent browser session:
    - Prefer the bundled helper `scripts/lit_browser_session.py` for repeated downloads.
    - Use a profile directory under the task workspace or a user-approved path so login survives within the session.
+   - If the user already has a working browser session, prefer attaching to a Chrome session started with `--remote-debugging-port` via `--cdp-url`; otherwise use `--browser-channel chrome` before falling back to bundled Chromium.
    - Open the institution/library login URL or the first target page.
 
 3. Guide manual verification:
@@ -28,11 +29,13 @@ Never ask for passwords, tokens, cookies, or session exports. Never attempt to s
    - Wait for the user to confirm before continuing. Do not collect credentials in chat.
 
 4. Automate authorized retrieval:
-   - Visit each target URL.
+   - Run a legal resolver pass before browser work when DOI/PMID/arXiv IDs are available: arXiv/PMC/native public PDFs, Unpaywall/OpenAlex/Crossref metadata, then publisher/institutional pages.
+   - Visit each target URL or the resolved publisher landing page.
    - Prefer publisher-provided PDF/full-text buttons over constructing undocumented URLs.
    - Use page cookies/session state from the visible browser when fetching PDF links.
+   - For ScienceDirect PDF-viewer or signed asset pages that reject background requests, use the authorized browser page itself to fetch `window.location.href`; save only if the returned bytes start with `%PDF`.
    - Save only files that return PDF content or trigger a browser download.
-   - Record successes, skipped pages, access-denied pages, and errors in a manifest.
+   - Record successes, skipped pages, access-denied pages, provider errors, and manual-search-needed cases in a manifest.
 
 5. Verify outputs:
    - Check that files exist, are non-empty, and start with `%PDF` when possible.
@@ -51,6 +54,21 @@ python "C:\Users\lenovo\.codex\skills\institutional-literature-download\scripts\
   --pause-for-login
 ```
 
+Attach to a user-controlled Chrome session when publisher automation profiles are fragile:
+
+```powershell
+& "C:\Program Files\Google\Chrome\Application\chrome.exe" `
+  --remote-debugging-port=9222 `
+  --user-data-dir="C:\path\to\chrome-debug-profile"
+
+python "C:\Users\lenovo\.codex\skills\institutional-literature-download\scripts\lit_browser_session.py" `
+  --urls-file "C:\path\to\articles.txt" `
+  --download-dir "C:\path\to\downloads" `
+  --profile-dir "C:\path\to\unused-profile" `
+  --cdp-url "http://127.0.0.1:9222" `
+  --pause-for-login
+```
+
 If Playwright is missing, install it in the active environment and install Chromium:
 
 ```powershell
@@ -66,6 +84,8 @@ Useful options:
 - `--pause-for-login`: pause until the user finishes login/verification and presses Enter.
 - `--download-dir <PATH>`: save PDFs and `download_manifest.json`.
 - `--profile-dir <PATH>`: store browser state for this authorized session.
+- `--browser-channel chrome`: launch installed Google Chrome instead of bundled Chromium.
+- `--cdp-url <URL>`: attach to a user-opened Chrome with remote debugging enabled.
 - `--slow-mo 150`: slow visible automation if the site is fragile.
 
 ## Site Handling Notes

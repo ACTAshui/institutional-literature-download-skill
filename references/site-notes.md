@@ -14,6 +14,11 @@ Use these notes to recognize ordinary access paths and failure modes. Do not use
 - Common authorized path: institution library proxy or ScienceDirect "Sign in" / "Access through your institution".
 - PDF controls often contain labels such as "Download PDF" or links containing `/science/article/pii/.../pdf`.
 - Some article pages open the PDF in a new tab instead of triggering a download. Use the authenticated browser context to fetch the PDF link only after the link is visible.
+- DOI resolver pages may stop at `linkinghub.elsevier.com/retrieve/pii/...`; extract the PII and visit `https://www.sciencedirect.com/science/article/pii/<PII>` before looking for PDF controls.
+- Use Zotero-style extraction patterns before declaring `not_found`: check `citation_pdf_url` meta tags, `#pdfLink`, links/buttons with PDF labels or ARIA/data attributes, embedded PDF objects, and page JSON containing PDF download metadata.
+- For ScienceDirect article pages with a visible authorized article view, a publisher PDF endpoint may be available as `/science/article/pii/<PII>/pdfft?isDTMRedir=true&download=true`. Only request it through the authenticated browser context and only save it if the response is real PDF content.
+- If the PDF endpoint opens Chrome's PDF viewer or a `pdf.sciencedirectassets.com/.../main.pdf?...` signed asset, background requests may return 403 even though the authorized page can view the PDF. Open the PDF URL in the same browser context and run an in-page `fetch(window.location.href, {credentials: "include"})`; save the bytes only when they start with `%PDF`.
+- If ScienceDirect/RELX returns `CPE00001` or "There was a problem providing the content you requested", stop retrying that item and record the reference number, IP, user agent, timestamp, and target URL. This is a provider-side content/access error, not a missing article.
 
 ## Web of Science
 
